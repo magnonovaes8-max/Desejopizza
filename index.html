@@ -4,9 +4,1296 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Desejo Pizza | Cardápio</title>
+
+  <!-- ===== CAMPANHA BLACK FRIDAY 2026 — INÍCIO (configuração + tema inicial) =====
+       Para encerrar a campanha: apague os 5 blocos marcados com "CAMPANHA BLACK FRIDAY"
+       (este bloco, o CSS, o botão de tema, o banner e o script final) ou use ativa: false. -->
+  <meta name="theme-color" content="#111111" id="metaThemeColor">
+  <script>
+    // ---- Imagens do banner (substitua pelos links definitivos quando tiver) ----
+    // Versão vertical (celulares) e horizontal (computadores/tablets a partir de 768 px).
+    const URL_BANNER_BLACK_FRIDAY_MOBILE  = "https://i.ibb.co/99xSZ2Nj/Stories-instagram-16-de-maio-dia-do-gari-20261119-174544-0000.png";
+    const URL_BANNER_BLACK_FRIDAY_DESKTOP = "https://i.ibb.co/99xSZ2Nj/Stories-instagram-16-de-maio-dia-do-gari-20261119-174544-0000.png";
+
+    // ---- Datas da campanha (sempre no horário de Bahia/Brasília, formato AAAA-MM-DDTHH:MM:SS) ----
+    const CAMPANHA_BLACK_FRIDAY = {
+      ativa: true,                                 // false = site volta ao normal (sem banner, sem tema, sem botão)
+      fusoHorario: "America/Bahia",
+      bannerVisivelAte:  "2026-11-22T23:59:59",    // domingo 22/11: o banner de divulgação deixa de aparecer
+      promocaoInicio:    "2026-11-25T00:00:00",    // quarta 25/11: início da promoção (independe do banner)
+      promocaoFim:       "2026-11-27T23:59:59",    // sexta 27/11: fim da promoção
+      temaDisponivelAte: "2026-11-27T23:59:59"     // depois disso o site abre no tema original e o botão some (null = sem prazo)
+    };
+
+    // "Agora" no fuso da pizzaria, independentemente do relógio/fuso do aparelho do visitante.
+    // Para testar, abra a página com ?simularData=2026-11-23T10:00 no final do endereço.
+    function agoraNoFusoDaCampanha() {
+      const simulada = new URLSearchParams(location.search).get("simularData");
+      if (simulada && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(simulada)) {
+        return simulada.length === 16 ? simulada + ":00" : simulada;
+      }
+      try {
+        const p = {};
+        new Intl.DateTimeFormat("en-CA", {
+          timeZone: CAMPANHA_BLACK_FRIDAY.fusoHorario, hourCycle: "h23",
+          year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit"
+        }).formatToParts(new Date()).forEach(parte => { p[parte.type] = parte.value; });
+        return `${p.year}-${p.month}-${p.day}T${p.hour === "24" ? "00" : p.hour}:${p.minute}:${p.second}`;
+      } catch (erro) {
+        // Bahia fica em UTC−3 o ano todo (sem horário de verão).
+        return new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 19);
+      }
+    }
+    const AGORA_BAHIA = agoraNoFusoDaCampanha();
+
+    // Exibição do banner (divulgação) e validade da promoção são regras independentes.
+    const bannerBlackFridayVisivel   = () => CAMPANHA_BLACK_FRIDAY.ativa && AGORA_BAHIA <= CAMPANHA_BLACK_FRIDAY.bannerVisivelAte;
+    const temaBlackFridayDisponivel  = () => CAMPANHA_BLACK_FRIDAY.ativa &&
+      (!CAMPANHA_BLACK_FRIDAY.temaDisponivelAte || AGORA_BAHIA <= CAMPANHA_BLACK_FRIDAY.temaDisponivelAte);
+    const estadoDaPromocao = () =>
+      AGORA_BAHIA < CAMPANHA_BLACK_FRIDAY.promocaoInicio ? "antes" :
+      AGORA_BAHIA <= CAMPANHA_BLACK_FRIDAY.promocaoFim ? "vigente" : "encerrada";
+
+    // Tema inicial: a cada carregamento da página abre em Black Friday (nada é lido do armazenamento do navegador).
+    document.documentElement.setAttribute("data-theme", temaBlackFridayDisponivel() ? "blackfriday" : "original");
+  </script>
+  <!-- ===== CAMPANHA BLACK FRIDAY 2026 — FIM (configuração + tema inicial) ===== -->
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #fffaf5; }
+    .tab-active { background: #dc2626; color: white; }
+    .pizza-card { transition: transform .15s ease, box-shadow .15s ease; }
+    .pizza-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+    .modal-overlay { background: rgba(0,0,0,.65); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Cards de destaque (Dois e Três Sabores): tom de pizzaria, marrom + vermelho + amarelo */
+    .card-destaque {
+      background: linear-gradient(135deg, #7f1d1d 0%, #92400e 55%, #b45309 100%);
+      color: #fff;
+      border: 2px solid #facc15;
+      box-shadow: 0 6px 20px rgba(127, 29, 29, .35);
+    }
+    .card-destaque .text-gray-600, .card-destaque .text-gray-500 { color: #fde68a; }
+    .card-destaque .text-red-600 { color: #fde047; }
+    .card-destaque select { color: #1f2937; background: #fff; }
+    .card-destaque .badge-destaque { background: #facc15; color: #7f1d1d; }
+    .card-destaque .btn-adicionar-meia, .card-destaque .btn-adicionar-tres { background: #facc15; color: #7f1d1d; }
+    .card-destaque .btn-adicionar-meia:hover, .card-destaque .btn-adicionar-tres:hover { background: #fde047; }
+
+    /* Navegação: rolagem suave, foco visível e barra de categorias sem scrollbar */
+    html { scroll-behavior: smooth; }
+    .no-scrollbar { scrollbar-width: none; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
+      outline: 3px solid #facc15; outline-offset: 2px;
+    }
+    .tab-active { box-shadow: 0 2px 8px rgba(220, 38, 38, .35); }
+    .icone-whats { background: #25D366; }
+    .icone-insta { background: linear-gradient(45deg, #f09433, #dc2743 55%, #bc1888); }
+
+    /* Botão Bebidas: copo que enche de líquido verde (chama a atenção para a categoria) */
+    .btn-bebidas {
+      position: relative;
+      background: linear-gradient(135deg, #7f1d1d 0%, #92400e 60%, #b45309 100%);
+      border: 2px solid #facc15;
+      color: #fff;
+      box-shadow: 0 6px 18px rgba(127, 29, 29, .45);
+      transition: transform .15s ease;
+    }
+    .btn-bebidas:hover { transform: scale(1.04); }
+    .btn-bebidas:active { transform: scale(.97); }
+    .btn-bebidas::after {            /* anel que pulsa ao redor do botão */
+      content: ""; position: absolute; inset: -2px; border-radius: 9999px;
+      border: 2px solid #facc15; pointer-events: none;
+      animation: pulso-bebidas 2.2s ease-out infinite;
+    }
+    @keyframes pulso-bebidas { 0% { transform: scale(1); opacity: .8; } 100% { transform: scale(1.28); opacity: 0; } }
+    .copo-liquido { animation: encher-copo 4.5s ease-in-out infinite; }
+    @keyframes encher-copo {
+      0%   { transform: translateY(42px); }
+      65%  { transform: translateY(0); }
+      88%  { transform: translateY(0); }
+      100% { transform: translateY(42px); }
+    }
+    .onda { animation: onda-x 1.6s linear infinite; }
+    .onda-fundo { animation-duration: 2.6s; animation-direction: reverse; opacity: .7; }
+    @keyframes onda-x { from { transform: translateX(0); } to { transform: translateX(-20px); } }
+    .bolha { animation: subir-bolha 2.2s ease-in infinite; }
+    .bolha:nth-of-type(2) { animation-delay: .7s; }
+    .bolha:nth-of-type(3) { animation-delay: 1.4s; }
+    @keyframes subir-bolha {
+      0%   { transform: translateY(6px); opacity: 0; }
+      30%  { opacity: .85; }
+      100% { transform: translateY(-14px); opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .copo-liquido, .onda, .bolha, .btn-bebidas::after { animation: none; }
+      .copo-liquido { transform: translateY(6px); }
+    }
+
+    /* ===== CAMPANHA BLACK FRIDAY 2026 — INÍCIO (CSS) =====
+       O tema original é o CSS acima, intacto. Tudo abaixo só vale com <html data-theme="blackfriday">
+       (exceto o botão de tema e o banner, que têm cores próprias nos dois temas). */
+    :root {
+      --bf-preto: #111111;
+      --bf-preto-2: #1B1B1B;
+      --bf-vermelho: #D71920;
+      --bf-vermelho-escuro: #8F1018;
+      --bf-dourado: #F5B82E;
+      --bf-amarelo: #FFC928;
+      --bf-branco: #FFFFFF;
+      --bf-texto-suave: #D0D0D0;
+      --bf-borda: #4A4A4A;
+      --bf-cabecalho: var(--bf-vermelho-escuro);   /* troque por var(--bf-preto-2) para cabeçalho preto */
+    }
+
+    /* Botão de alternância de tema */
+    .btn-tema {
+      display: inline-flex; align-items: center; gap: .5rem;
+      border-radius: 9999px; padding: .4rem .95rem; font-size: .8125rem; font-weight: 600; line-height: 1.2;
+      color: #fff; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.45);
+      transition: background-color .15s ease;
+    }
+    .btn-tema:hover { background: rgba(255,255,255,.28); }
+    .btn-tema svg { width: 1rem; height: 1rem; flex: none; }
+    .btn-tema[hidden], .btn-tema [hidden] { display: none; }
+
+    /* Banner promocional (variáveis mudam conforme o tema) */
+    .bf-banner {
+      --bf-b-bg: #ffffff; --bf-b-borda: #fcd34d; --bf-b-texto: #1f2937; --bf-b-suave: #4b5563;
+      --bf-b-destaque: #b91c1c; --bf-b-chip-bg: #fef3c7; --bf-b-chip-texto: #7f1d1d; --bf-b-divisor: #fde68a;
+    }
+    html[data-theme="blackfriday"] .bf-banner {
+      --bf-b-bg: var(--bf-preto-2); --bf-b-borda: var(--bf-dourado); --bf-b-texto: var(--bf-branco); --bf-b-suave: var(--bf-texto-suave);
+      --bf-b-destaque: var(--bf-amarelo); --bf-b-chip-bg: var(--bf-vermelho); --bf-b-chip-texto: #ffffff; --bf-b-divisor: #3A3A3A;
+    }
+    .bf-banner-card { border-radius: 1rem; overflow: hidden; background: var(--bf-b-bg); border: 2px solid var(--bf-b-borda); box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+    .bf-banner-imagem { display: flex; justify-content: center; background: #0b0b0b; }
+    .bf-banner-imagem[hidden] { display: none; }
+    .bf-banner-imagem img { display: block; width: 100%; height: auto; max-height: 34rem; object-fit: contain; }
+    .bf-banner-texto { padding: 1.25rem; color: var(--bf-b-texto); display: grid; gap: 1.1rem; }
+    .bf-banner-titulo { font-size: 1.6rem; line-height: 1.15; font-weight: 800; letter-spacing: .02em; color: var(--bf-b-destaque); text-wrap: balance; }
+    .bf-banner-sub { margin-top: .6rem; font-size: 1rem; line-height: 1.4; color: var(--bf-b-suave); }
+    .bf-tamanhos { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; list-style: none; padding: 0; }
+    .bf-tamanhos li { background: var(--bf-b-chip-bg); color: var(--bf-b-chip-texto); border-radius: 9999px; padding: .35rem 1rem; font-weight: 800; font-size: 1rem; }
+    .bf-datas-rotulo { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--bf-b-suave); }
+    .bf-datas { list-style: none; padding: 0; margin: .5rem 0 0; display: grid; gap: .4rem; }
+    .bf-datas li { border-left: 4px solid var(--bf-b-destaque); padding: .2rem 0 .2rem .75rem; font-weight: 600; font-size: 1rem; line-height: 1.35; }
+    .bf-banner-nota { border-top: 1px solid var(--bf-b-divisor); padding-top: .9rem; font-weight: 700; font-size: 1rem; color: var(--bf-b-texto); }
+    @media (min-width: 768px) {
+      .bf-banner-imagem img { max-height: 26rem; }
+      .bf-banner-texto { padding: 1.75rem 2rem; grid-template-columns: 1.2fr 1fr; column-gap: 2rem; align-items: start; }
+      .bf-banner-titulo { font-size: 2.25rem; }
+      .bf-banner-nota { grid-column: 1 / -1; }
+    }
+
+    /* ---- Tema Black Friday ---- */
+    html[data-theme="blackfriday"] { color-scheme: dark; }
+    html[data-theme="blackfriday"] body { background: var(--bf-preto); color: var(--bf-branco); }
+    html[data-theme="blackfriday"] .text-gray-800,
+    html[data-theme="blackfriday"] .text-gray-700 { color: var(--bf-branco); }
+    html[data-theme="blackfriday"] .text-gray-600,
+    html[data-theme="blackfriday"] .text-gray-500 { color: var(--bf-texto-suave); }
+    html[data-theme="blackfriday"] .text-red-600 { color: var(--bf-amarelo); }
+    html[data-theme="blackfriday"] .bg-white { background-color: var(--bf-preto-2); color: var(--bf-branco); }
+    html[data-theme="blackfriday"] .bg-red-600 { background-color: var(--bf-vermelho); color: #fff; }
+    html[data-theme="blackfriday"] .hover\:bg-red-700:hover { background-color: var(--bf-vermelho-escuro); }
+    html[data-theme="blackfriday"] .bg-amber-800 { background-color: var(--bf-vermelho); }
+    html[data-theme="blackfriday"] .hover\:bg-amber-900:hover { background-color: var(--bf-vermelho-escuro); }
+    html[data-theme="blackfriday"] .border:not([class*="border-"]),
+    html[data-theme="blackfriday"] .border-gray-300,
+    html[data-theme="blackfriday"] .border-t,
+    html[data-theme="blackfriday"] .border-b { border-color: var(--bf-borda); }
+    html[data-theme="blackfriday"] .tab-active { background: var(--bf-vermelho); color: #fff; box-shadow: 0 2px 8px rgba(215,25,32,.45); }
+    html[data-theme="blackfriday"] .modal-overlay { background: rgba(0,0,0,.8); }
+
+    /* Cabeçalho */
+    html[data-theme="blackfriday"] header.bg-red-600 { background-color: var(--bf-cabecalho); border-bottom: 3px solid var(--bf-dourado); box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+    html[data-theme="blackfriday"] .btn-tema { border-color: var(--bf-dourado); }
+    html[data-theme="blackfriday"] header .bg-white { background-color: var(--bf-preto-2); color: var(--bf-branco); }
+    html[data-theme="blackfriday"] header a.bg-white:hover { background-color: #2A2A2A; }
+    html[data-theme="blackfriday"] #btnAbrirCarrinho { background-color: var(--bf-dourado); color: var(--bf-preto); }
+    html[data-theme="blackfriday"] #btnAbrirCarrinho:hover { background-color: var(--bf-amarelo); }
+    html[data-theme="blackfriday"] header a.bg-amber-900 { background-color: var(--bf-preto); }
+    html[data-theme="blackfriday"] header a.bg-amber-900:hover { background-color: #000; }
+    html[data-theme="blackfriday"] .btn-bebidas { background: var(--bf-vermelho-escuro); border-color: var(--bf-dourado); box-shadow: 0 6px 18px rgba(0,0,0,.6); }
+
+    /* Categorias e cards */
+    html[data-theme="blackfriday"] #categorias { background-color: rgba(17,17,17,.95); border-color: var(--bf-borda); }
+    html[data-theme="blackfriday"] #categorias button.bg-white { background-color: var(--bf-preto-2); color: var(--bf-branco); }
+    html[data-theme="blackfriday"] .pizza-card:hover { box-shadow: 0 8px 24px rgba(215,25,32,.3); }
+    html[data-theme="blackfriday"] .card-destaque { background: var(--bf-vermelho-escuro); border-color: var(--bf-dourado); color: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.55); }
+    html[data-theme="blackfriday"] .card-destaque .text-gray-600,
+    html[data-theme="blackfriday"] .card-destaque .text-gray-500 { color: #FFE9A8; }
+    html[data-theme="blackfriday"] .card-destaque .text-red-600 { color: var(--bf-amarelo); }
+    html[data-theme="blackfriday"] .card-destaque .badge-destaque { background: var(--bf-dourado); color: var(--bf-preto); }
+    html[data-theme="blackfriday"] .card-destaque .btn-adicionar-meia,
+    html[data-theme="blackfriday"] .card-destaque .btn-adicionar-tres { background-color: var(--bf-dourado); color: var(--bf-preto); }
+    html[data-theme="blackfriday"] .card-destaque .btn-adicionar-meia:hover,
+    html[data-theme="blackfriday"] .card-destaque .btn-adicionar-tres:hover { background-color: var(--bf-amarelo); }
+
+    /* Campos de formulário e seleção */
+    html[data-theme="blackfriday"] input,
+    html[data-theme="blackfriday"] select,
+    html[data-theme="blackfriday"] textarea { background-color: var(--bf-preto); color: var(--bf-branco); }
+    html[data-theme="blackfriday"] ::placeholder { color: #A8A8A8; opacity: 1; }
+    html[data-theme="blackfriday"] select option,
+    html[data-theme="blackfriday"] select optgroup { background-color: var(--bf-preto-2); color: var(--bf-branco); }
+
+    /* Modais (os painéis usam .bg-white; só o título de Bebidas tem gradiente próprio) */
+    html[data-theme="blackfriday"] #modalBebidas .bg-gradient-to-r { background: var(--bf-vermelho-escuro); }
+
+    /* Rodapé */
+    html[data-theme="blackfriday"] footer.bg-stone-900 { background-color: #0A0A0A; border-top: 3px solid var(--bf-vermelho); }
+    html[data-theme="blackfriday"] footer .bg-gradient-to-br { background: var(--bf-preto-2); border-color: var(--bf-dourado); }
+    /* ===== CAMPANHA BLACK FRIDAY 2026 — FIM (CSS) ===== */
+  </style>
 </head>
-<body>
-  <h1>Desejo Pizza</h1>
-  <p>Atualização do HTML solicitada.</p>
+<body class="text-gray-800">
+  <!-- Ícones reutilizáveis (WhatsApp e Instagram) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="icon-whats" viewBox="0 0 24 24">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <path transform="translate(6.6 6.6) scale(.45)" fill="currentColor" d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+    </symbol>
+    <symbol id="icon-insta" viewBox="0 0 24 24">
+      <rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/>
+      <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/>
+      <circle cx="17.3" cy="6.7" r="1.2" fill="currentColor"/>
+    </symbol>
+  </svg>
+
+  <header class="bg-red-600 text-white shadow-md">
+    <!-- ===== CAMPANHA BLACK FRIDAY — INÍCIO (botão de tema) ===== -->
+    <div class="max-w-6xl mx-auto px-4 pt-3 flex justify-end">
+      <button type="button" id="btnTema" class="btn-tema" hidden aria-label="Voltar ao tema original do site">
+        <svg data-icone-sol viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg data-icone-estrela viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6L2.5 9.4l6.6-.8z"/></svg>
+        <span data-tema-texto>Voltar ao tema original</span>
+      </button>
+    </div>
+    <!-- ===== CAMPANHA BLACK FRIDAY — FIM (botão de tema) ===== -->
+      <div class="flex justify-center py-4">
+    <img
+        src="https://i.ibb.co/FkbKGnxt/Pixlr-20261103125917774.png"
+        alt="Logo Desejo Pizza"
+        class="w-72 sm:w-96 max-w-full h-auto object-contain"
+    >
+</div>
+    <div class="max-w-6xl mx-auto px-4 py-5 flex flex-col gap-4">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div class="flex-1 text-center">
+          <p style="text-align: center; font-size: 12px;">
+    Canudos - Bahia
+</p>
+          <p class="text-center font-semibold">A pizza mais desejada da região!</p>
+        </div>
+        <div class="flex flex-wrap items-center justify-center gap-3">
+          <button type="button" data-abrir-bebidas class="btn-bebidas inline-flex items-center gap-2 rounded-full pl-2.5 pr-4 py-1.5 font-bold" aria-label="Abrir bebidas">
+            <span data-copo class="block w-8 h-10 shrink-0"></span>
+            <span class="leading-tight text-left">
+              <span class="block text-[10px] font-semibold text-yellow-200">Toque e peça</span>
+              <span class="block text-sm font-extrabold">Bebidas</span>
+            </span>
+          </button>
+          <button id="btnAbrirCarrinho" class="bg-white text-red-600 font-bold rounded-full px-5 py-3">
+            Carrinho (<span id="quantidadeCarrinho">0</span>) · <span id="totalTopo">R$ 0,00</span>
+          </button>
+        </div>
+      </div>
+      <div class="flex flex-col items-center gap-2">
+        <div class="flex flex-wrap items-center justify-center gap-2">
+          <a href="#pizza-dois-sabores" id="atalhoDoisSabores" class="inline-flex items-center gap-1.5 rounded-full bg-amber-900 hover:bg-amber-950 border border-yellow-400 text-white font-bold text-sm px-4 py-2 shadow-md transition">
+            <span aria-hidden="true">🍕</span> Dois Sabores <span aria-hidden="true">↓</span>
+          </a>
+          <a href="#pizza-tres-sabores" id="atalhoTresSabores" class="inline-flex items-center gap-1.5 rounded-full bg-amber-900 hover:bg-amber-950 border border-yellow-400 text-white font-bold text-sm px-4 py-2 shadow-md transition">
+            <span aria-hidden="true">🍕</span> Três Sabores <span aria-hidden="true">↓</span>
+          </a>
+        </div>
+        <span class="text-red-100 text-sm text-center">Encontre sua combinação favorita.</span>
+        <a href="#sobre" id="atalhoSobre" class="inline-flex items-center gap-1.5 rounded-full bg-white/15 hover:bg-white/25 border border-white/40 text-white font-semibold text-sm px-5 py-1.5 transition">
+          Sobre
+        </a>
+      </div>
+
+      <!-- Contatos: WhatsApp e Instagram -->
+      <div class="w-full max-w-md mx-auto rounded-2xl bg-black/15 border border-white/20 p-3 text-center">
+        <p class="text-sm font-semibold mb-2">Converse pelo WhatsApp e siga-nos no Instagram</p>
+        <div class="grid grid-cols-2 gap-2">
+          <a data-whats href="#" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 rounded-xl bg-white text-gray-800 px-2.5 py-2 text-left hover:bg-green-50 transition">
+            <span class="icone-whats text-white rounded-lg w-8 h-8 p-1 shrink-0"><svg class="w-full h-full" aria-hidden="true"><use href="#icon-whats"/></svg></span>
+            <span class="leading-tight min-w-0">
+              <span class="block text-[11px] text-gray-500">WhatsApp</span>
+              <span class="block text-[13px] font-bold whitespace-nowrap">(75) 99266-0556</span>
+            </span>
+          </a>
+          <a href="https://www.instagram.com/desejo.pizza" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 rounded-xl bg-white text-gray-800 px-2.5 py-2 text-left hover:bg-pink-50 transition">
+            <span class="icone-insta text-white rounded-lg w-8 h-8 p-1 shrink-0"><svg class="w-full h-full" aria-hidden="true"><use href="#icon-insta"/></svg></span>
+            <span class="leading-tight min-w-0">
+              <span class="block text-[11px] text-gray-500">Instagram</span>
+              <span class="block text-[13px] font-bold whitespace-nowrap">@desejo.pizza</span>
+            </span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== CAMPANHA BLACK FRIDAY — INÍCIO (banner) =====
+       Aparece só até a data bannerVisivelAte (ver configuração no <head>). As imagens vêm das constantes
+       URL_BANNER_BLACK_FRIDAY_MOBILE e URL_BANNER_BLACK_FRIDAY_DESKTOP. -->
+  <section id="bannerBlackFriday" hidden class="bf-banner max-w-6xl mx-auto px-4 pt-6" aria-labelledby="tituloBlackFriday">
+    <div class="bf-banner-card">
+      <div id="bfBannerImagem" class="bf-banner-imagem">
+        <picture>
+          <source id="bfSourceDesktop" media="(min-width: 768px)">
+          <img id="bfImg" alt="Arte da campanha Black Friday da Desejo Pizza: descontos especiais em pizzas Grande e Família nos dias 25, 26 e 27 de novembro de 2026" decoding="async">
+        </picture>
+      </div>
+      <div class="bf-banner-texto">
+        <div>
+          <h2 id="tituloBlackFriday" class="bf-banner-titulo">BLACK FRIDAY — DESEJO PIZZA</h2>
+          <p class="bf-banner-sub">Descontos especiais nas pizzas dos tamanhos:</p>
+          <ul class="bf-tamanhos" aria-label="Tamanhos participantes">
+            <li>Grande (G)</li>
+            <li>Família (F)</li>
+          </ul>
+        </div>
+        <div>
+          <p class="bf-datas-rotulo">Período da promoção</p>
+          <ul class="bf-datas">
+            <li><time datetime="2026-11-25">Quarta-feira, 25 de novembro de 2026</time></li>
+            <li><time datetime="2026-11-26">Quinta-feira, 26 de novembro de 2026</time></li>
+            <li><time datetime="2026-11-27">Sexta-feira, 27 de novembro de 2026</time></li>
+          </ul>
+        </div>
+        <p class="bf-banner-nota">Os sabores participantes serão divulgados em breve. Fique ligado!</p>
+      </div>
+    </div>
+  </section>
+  <!-- ===== CAMPANHA BLACK FRIDAY — FIM (banner) ===== -->
+
+  <!-- Vitrine de imagens: substitua as URLs das fotos e os links dos slides quando quiser. -->
+  <section class="max-w-6xl mx-auto px-4 pt-6" aria-label="Destaques de pizzas">
+    <div id="vitrinePizzas" class="relative overflow-hidden rounded-2xl shadow-lg bg-stone-900">
+      <a id="linkSlide" href="https://www.instagram.com/desejo.pizza?exln=eDZpZDJ2Ym96aWV1&utm_source=qr" target="_blank" rel="noopener noreferrer" class="block relative">
+        <img id="imagemSlide" src="https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1600&q=85" alt="Pizza artesanal em destaque" class="w-full h-56 sm:h-72 md:h-80 object-cover opacity-90" referrerpolicy="no-referrer">
+        <div class="absolute inset-0 bg-gradient-to-r from-black/80 via-black/40 to-transparent flex items-center">
+          <div class="px-14 sm:px-16 max-w-xl text-white">
+            <span class="uppercase tracking-[.2em] text-xs sm:text-sm font-bold text-amber-300">Desejo Pizza apresenta</span>
+            <h2 id="tituloSlide" class="text-xl sm:text-4xl font-extrabold mt-2">Seu próximo desejo começa aqui</h2>
+            <p id="textoSlide" class="mt-2 text-sm sm:text-base text-white/90">Sabores para compartilhar bons momentos.</p>
+            <span class="inline-block mt-4 bg-amber-800 hover:bg-amber-900 rounded-full px-5 py-2 text-sm font-bold">Ver no Instagram</span>
+          </div>
+        </div>
+      </a>
+      <button id="slideAnterior" type="button" aria-label="Slide anterior" class="absolute left-3 top-1/2 -translate-y-1/2 bg-black/45 hover:bg-black/70 text-white rounded-full w-10 h-10 text-2xl">‹</button>
+      <button id="proximoSlide" type="button" aria-label="Próximo slide" class="absolute right-3 top-1/2 -translate-y-1/2 bg-black/45 hover:bg-black/70 text-white rounded-full w-10 h-10 text-2xl">›</button>
+      <div id="indicadoresSlides" class="absolute bottom-3 left-0 right-0 flex justify-center gap-2" aria-label="Selecionar destaque"></div>
+    </div>
+  </section>
+
+  <main class="max-w-6xl mx-auto px-4 py-6">
+    <section id="cardapio" class="mb-4 scroll-mt-4">
+      <h2 class="text-2xl font-bold mb-2">Nosso cardápio</h2>
+      <p class="text-gray-600">Escolha seus sabores favoritos e monte seu pedido.</p>
+    </section>
+
+    <nav id="categorias" aria-label="Categorias do cardápio" class="sticky top-0 z-20 -mx-4 px-4 py-3 mb-4 flex gap-2 overflow-x-auto no-scrollbar bg-[#fffaf5]/95 backdrop-blur border-b border-orange-100">
+      <button class="tab-active shrink-0 whitespace-nowrap rounded-full px-4 py-2 font-semibold" data-categoria="todas">Todas</button>
+      <button class="bg-white border shrink-0 whitespace-nowrap rounded-full px-4 py-2 font-semibold" data-categoria="tradicionais">Tradicionais</button>
+      <button class="bg-white border shrink-0 whitespace-nowrap rounded-full px-4 py-2 font-semibold" data-categoria="especiais">Especiais</button>
+      <button class="bg-white border shrink-0 whitespace-nowrap rounded-full px-4 py-2 font-semibold" data-categoria="tres-sabores">Três Sabores</button>
+      <button class="bg-white border shrink-0 whitespace-nowrap rounded-full px-4 py-2 font-semibold" data-categoria="doces">Doces</button>
+      <button class="bg-white border shrink-0 whitespace-nowrap rounded-full px-4 py-2 font-semibold" data-categoria="calzones">Calzones</button>
+      <button class="bg-white border shrink-0 whitespace-nowrap rounded-full px-4 py-2 font-semibold" data-categoria="adicionais">Adicionais</button>
+      <button class="bg-white border shrink-0 whitespace-nowrap rounded-full px-4 py-2 font-semibold" data-categoria="bebidas">Bebidas</button>
+    </nav>
+
+    <div id="listaProdutos" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"></div>
+  </main>
+
+  <!-- Sobre nós + rodapé -->
+  <footer id="sobre" class="scroll-mt-4 bg-stone-900 text-stone-100 mt-12">
+    <div class="max-w-3xl mx-auto px-4 pt-10 pb-28">
+      <div class="rounded-3xl overflow-hidden border border-yellow-400/40 bg-gradient-to-br from-red-900 via-amber-900 to-amber-800 shadow-xl">
+        <img src="https://i.ibb.co/qL2kthF7/IMG-20261104-WA0000.jpg" alt="Desejo Pizza" class="w-full h-auto max-h-96 object-cover" loading="lazy">
+        <div class="p-6 sm:p-8 text-center">
+          <h2 class="text-2xl sm:text-3xl font-extrabold">SOBRE NÓS – DESEJO PIZZA <span aria-hidden="true">🍕</span></h2>
+          <div class="mt-5 space-y-4 text-amber-50/95 leading-relaxed text-left sm:text-center">
+            <p>A <strong class="text-yellow-300">Desejo Pizza</strong> nasceu em 2025, com o propósito de levar até você muito mais do que uma pizza: proporcionar momentos especiais, experiências deliciosas e sabores inesquecíveis.</p>
+            <p>Fundada por <strong class="text-yellow-300">Italo Freitas</strong>, nossa empresa surgiu com uma paixão em comum: preparar pizzas de qualidade, feitas com amor, dedicação e atenção a cada detalhe.</p>
+            <p>Trabalhamos exclusivamente com <strong class="text-yellow-300">delivery</strong>, levando até a sua casa uma experiência saborosa e especial. Nosso cardápio conta com <strong class="text-yellow-300">mais de 50 sabores</strong> de pizzas doces e salgadas, preparados para agradar aos mais diversos paladares e transformar qualquer momento em uma ocasião deliciosa.</p>
+            <p>Estamos localizados na <strong class="text-yellow-300">Avenida Brasília, em Canudos – Bahia</strong>, e temos um compromisso diário com nossos clientes: oferecer qualidade, muito sabor, dedicação e um atendimento feito com carinho.</p>
+            <p>Na Desejo Pizza, acreditamos que cada pizza carrega um pouco da nossa história, do nosso trabalho e da paixão pelo que fazemos.</p>
+          </div>
+
+          <ul class="grid grid-cols-2 gap-2 mt-6 text-sm font-semibold">
+            <li class="rounded-xl bg-black/20 border border-white/10 px-3 py-3"><span class="block text-2xl" aria-hidden="true">🚚</span>Entrega rápida</li>
+            <li class="rounded-xl bg-black/20 border border-white/10 px-3 py-3"><span class="block text-2xl" aria-hidden="true">🔥</span>Quentinha na sua porta</li>
+            <li class="rounded-xl bg-black/20 border border-white/10 px-3 py-3"><span class="block text-2xl" aria-hidden="true">📲</span>Pedido pelo WhatsApp</li>
+            <li class="rounded-xl bg-black/20 border border-white/10 px-3 py-3"><span class="block text-2xl" aria-hidden="true">📍</span>Av. Brasília, Canudos – BA</li>
+          </ul>
+
+          <div class="flex flex-wrap justify-center gap-2 mt-6">
+            <a href="#cardapio" class="rounded-full bg-yellow-400 hover:bg-yellow-300 text-red-900 font-bold text-sm px-5 py-2.5 transition">Ver cardápio ↑</a>
+            <a data-whats href="#" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-full bg-green-600 hover:bg-green-700 text-white font-bold text-sm px-5 py-2.5 transition">
+              <svg class="w-5 h-5" aria-hidden="true"><use href="#icon-whats"/></svg> Pedir pelo WhatsApp
+            </a>
+            <a href="https://www.instagram.com/desejo.pizza" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-full icone-insta text-white font-bold text-sm px-5 py-2.5 hover:opacity-90 transition">
+              <svg class="w-5 h-5" aria-hidden="true"><use href="#icon-insta"/></svg> Instagram
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-8 text-center text-sm text-stone-400 space-y-1">
+        <p>© <span id="anoAtual">2026</span> Desejo Pizza · Canudos – Bahia</p>
+        <p>Desenvolvido por <strong class="text-stone-200">SocialMais™ Tecnologia de Comunicação Digital</strong> — por <a href="https://instagram.com/novaes.cmm" target="_blank" rel="noopener noreferrer" class="text-yellow-300 underline underline-offset-2 hover:text-yellow-200">Magno Novaes</a></p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Atalho flutuante: Bebidas -->
+  <button type="button" data-abrir-bebidas class="btn-bebidas fixed bottom-[8.5rem] right-4 z-30 inline-flex items-center gap-2 rounded-full pl-2.5 pr-4 py-1.5 font-bold" aria-label="Abrir bebidas">
+            <span data-copo class="block w-8 h-10 shrink-0"></span>
+            <span class="leading-tight text-left">
+              <span class="block text-[10px] font-semibold text-yellow-200">Toque e peça</span>
+              <span class="block text-sm font-extrabold">Bebidas</span>
+            </span>
+          </button>
+
+  <button id="btnCarrinhoFlutuante" class="fixed bottom-[4.5rem] right-4 z-30 bg-red-600 hover:bg-red-700 text-white rounded-full shadow-lg px-5 py-4 font-bold">
+    Ver carrinho · <span id="totalFlutuante">R$ 0,00</span>
+  </button>
+
+  <!-- Modal do carrinho -->
+  <div id="modalCarrinho" class="hidden fixed inset-0 z-40 modal-overlay flex items-center justify-center p-3" role="dialog" aria-modal="true" aria-labelledby="tituloCarrinho">
+    <div class="bg-white rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-2xl">
+      <div class="flex items-center justify-between p-5 border-b">
+        <h2 id="tituloCarrinho" class="text-xl font-bold">Seu carrinho</h2>
+        <button id="btnFecharCarrinho" class="text-2xl leading-none px-2" aria-label="Fechar carrinho">&times;</button>
+      </div>
+      <div class="p-5">
+        <div id="listaCarrinho" class="space-y-3"></div>
+        <div class="border-t mt-4 pt-4 flex justify-between text-lg font-bold">
+          <span>Total</span><span id="totalCarrinho">R$ 0,00</span>
+        </div>
+        <button id="btnFinalizar" class="w-full mt-5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl py-3">
+          Finalizar pedido pelo WhatsApp
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de bebidas (adicionar direto ao carrinho) -->
+  <div id="modalBebidas" class="hidden fixed inset-0 z-40 modal-overlay flex items-center justify-center p-3" role="dialog" aria-modal="true" aria-labelledby="tituloBebidas">
+    <div class="bg-white rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-2xl">
+      <div class="flex items-center justify-between p-5 bg-gradient-to-r from-red-900 via-amber-900 to-amber-800 text-white rounded-t-2xl border-b-4 border-yellow-400">
+        <h2 id="tituloBebidas" class="text-xl font-bold"><span aria-hidden="true">🥤</span> Bebidas</h2>
+        <button id="btnFecharBebidas" class="text-2xl leading-none px-2" aria-label="Fechar bebidas">&times;</button>
+      </div>
+      <div class="p-5">
+        <p class="text-sm text-gray-600 mb-3">Escolha sua bebida e adicione direto ao pedido.</p>
+        <div id="listaBebidas" class="space-y-3"></div>
+        <button id="btnBebidasCarrinho" class="w-full mt-5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl py-3">
+          Ver carrinho · <span id="totalBebidas">R$ 0,00</span>
+        </button>
+        <button id="btnBebidasContinuar" class="w-full mt-2 border border-gray-300 text-gray-700 font-semibold rounded-xl py-2.5">
+          Continuar escolhendo
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de dados do pedido -->
+  <div id="modalCheckout" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center p-3" role="dialog" aria-modal="true" aria-labelledby="tituloCheckout">
+    <div class="bg-white rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-2xl">
+      <div class="flex items-center justify-between p-5 border-b">
+        <h2 id="tituloCheckout" class="text-xl font-bold">Dados para entrega</h2>
+        <button id="btnFecharCheckout" class="text-2xl leading-none px-2" aria-label="Fechar formulário">&times;</button>
+      </div>
+      <form id="formCheckout" class="p-5 space-y-3">
+        <label class="block">
+          <span class="block text-sm font-semibold mb-1">Nome *</span>
+          <input id="nomeCliente" required maxlength="100" class="w-full border rounded-lg p-3" placeholder="Seu nome">
+        </label>
+        <label class="block">
+          <span class="block text-sm font-semibold mb-1">Telefone</span>
+          <input id="telefoneCliente" type="tel" maxlength="30" class="w-full border rounded-lg p-3" placeholder="(DDD) 99999-9999">
+        </label>
+        <label class="block">
+          <span class="block text-sm font-semibold mb-1">Endereço *</span>
+          <input id="enderecoCliente" required maxlength="200" class="w-full border rounded-lg p-3" placeholder="Rua, número, bairro">
+        </label>
+        <label class="block">
+          <span class="block text-sm font-semibold mb-1">Ponto de referência</span>
+          <input id="referenciaCliente" maxlength="200" class="w-full border rounded-lg p-3" placeholder="Próximo a...">
+        </label>
+        <label class="block">
+          <span class="block text-sm font-semibold mb-1">Forma de pagamento *</span>
+          <select id="pagamentoCliente" required class="w-full border rounded-lg p-3">
+            <option value="">Selecione</option>
+            <option>Pix</option>
+            <option>Dinheiro</option>
+            <option>Cartão de débito</option>
+            <option>Cartão de crédito</option>
+          </select>
+        </label>
+        <label id="campoTroco" class="hidden block">
+          <span class="block text-sm font-semibold mb-1">Troco para quanto?</span>
+          <input id="trocoCliente" class="w-full border rounded-lg p-3" placeholder="Ex.: R$ 100,00">
+        </label>
+        <label class="block">
+          <span class="block text-sm font-semibold mb-1">Observações</span>
+          <textarea id="observacoesCliente" rows="3" maxlength="500" class="w-full border rounded-lg p-3" placeholder="Alguma observação sobre o pedido?"></textarea>
+        </label>
+        <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl py-3">
+          Enviar pedido pelo WhatsApp
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // IMPORTANTE: confirme o número da pizzaria. Use DDI + DDD + número, sem espaços.
+    const WHATSAPP_PIZZARIA = "5575992660556";
+
+    // Tabelas de preço por tamanho: Pequena, Média, Grande, Família (conforme o cardápio em PDF).
+    const NOMES_TAMANHO = ["Pequena", "Média", "Grande", "Família"];
+    const PRECOS = {
+      tradicional: [35, 40, 45, 60],
+      especial:    [37, 45, 50, 65],
+      premium:     [50, 57, 66, 86],   // Canudense, Costela especial, Camarão especial
+      nordestina:  [45, 55, 60, 75],
+      doce:        [37, 45, 50, 65],
+      sensacao:    [40, 50, 60, 70]
+    };
+
+    const slug = texto => texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const porTamanho = precos => precos.map((preco, i) => ({ nome: NOMES_TAMANHO[i], preco }));
+    const pizza = (nome, categoria, descricao, tabela, extra = {}) =>
+      ({ id: slug(nome), nome, categoria, descricao, tamanhos: porTamanho(PRECOS[tabela]), ...extra });
+    const item = (nome, categoria, descricao, opcoes) =>
+      ({ id: slug(nome), nome, categoria, descricao, tamanhos: opcoes.map(([n, preco]) => ({ nome: n, preco })) });
+
+    const produtos = [
+      // Pizza de dois sabores (os sabores vêm automaticamente das categorias Tradicionais e Especiais)
+      {
+        id: "meia-meia",
+        nome: "Pizza Dois Sabores",
+        descricao: "Escolha dois sabores para combinar na mesma pizza. Vale também sabor doce. O valor é o do sabor mais caro entre os dois.",
+        categoria: "tradicionais",
+        tipo: "meia-meia"
+      },
+
+      // Pizza de três sabores (sempre tamanho Família)
+      {
+        id: "tres-sabores",
+        nome: "Pizza Três Sabores (Família)",
+        descricao: "Tamanho Família com três sabores à sua escolha. Pode misturar salgados e doces. Se algum for especial ou doce, vale o preço do mais caro; se todos forem tradicionais, vale o preço de tradicional.",
+        categoria: "tres-sabores",
+        tipo: "tres-sabores"
+      },
+
+      // ===== PIZZAS TRADICIONAIS =====
+      pizza("Mussarela", "tradicionais", "Molho, mussarela.", "tradicional"),
+      pizza("Portuguesa", "tradicionais", "Molho, mussarela, presunto, tomate, cebola, ovo fatiado.", "tradicional"),
+      pizza("Calabresa", "tradicionais", "Molho, mussarela, calabresa, cebola.", "tradicional"),
+      pizza("Frango", "tradicionais", "Molho, mussarela, frango.", "tradicional"),
+      pizza("Baiana", "tradicionais", "Molho, mussarela, calabresa, pimenta calabresa.", "tradicional"),
+      pizza("Mista", "tradicionais", "Molho, mussarela, presunto, calabresa.", "tradicional"),
+      pizza("Bacon", "tradicionais", "Molho, mussarela, bacon.", "tradicional"),
+      pizza("Presunto", "tradicionais", "Molho, mussarela, presunto.", "tradicional"),
+      pizza("Lombinho", "tradicionais", "Molho, mussarela, lombinho canadense, cebola.", "tradicional"),
+      pizza("Vegetariana", "tradicionais", "Molho, mussarela, tomate, palmito, cebola, pimentão.", "tradicional"),
+      pizza("Milho Verde", "tradicionais", "Molho, mussarela, milho verde.", "tradicional"),
+      pizza("Marguerita", "tradicionais", "Molho, mussarela, tomate, manjericão.", "tradicional"),
+      pizza("Napolitana", "tradicionais", "Molho, mussarela, tomate, parmesão.", "tradicional"),
+
+      // ===== PIZZAS ESPECIAIS (preços individuais) =====
+      pizza("Canudense", "especiais", "Molho, mussarela, carne seca, banana da terra, bacon, cebola, cream cheese.", "premium"),
+      pizza("Costela Especial", "especiais", "Molho barbecue, mussarela, costela desfiada, cream cheese e cebola caramelizada.", "premium"),
+      pizza("Nordestina", "especiais", "Molho, mussarela, carne seca, cebola, catupiry.", "nordestina"),
+      pizza("Camarão Especial", "especiais", "Molho, mussarela, camarão, champignon, catupiry.", "premium"),
+
+      // ===== PIZZAS ESPECIAIS (tabela padrão) =====
+      pizza("Frango Especial", "especiais", "Molho, mussarela, frango, bacon, milho, catupiry.", "especial"),
+      pizza("Portuguesa Especial", "especiais", "Molho, mussarela, presunto, lombinho, tomate, palmito, ervilha, ovo fatiado.", "especial"),
+      pizza("Bacon Especial", "especiais", "Molho, mussarela, bacon, champignon, catupiry.", "especial"),
+      pizza("Atum Especial", "especiais", "Molho, mussarela, atum, catupiry.", "especial"),
+      pizza("Atum", "especiais", "Molho, mussarela, atum, cebola.", "especial"),
+      pizza("Pepperoni", "especiais", "Molho, mussarela, pepperoni.", "especial"),
+      pizza("Bacon e Pepperoni", "especiais", "Molho, mussarela, bacon, pepperoni, pimentão, cebola, champignon.", "especial"),
+      pizza("Brasileira", "especiais", "Molho, mussarela, bacon, milho, ervilha, cebola, molho barbecue.", "especial"),
+      pizza("Paulista", "especiais", "Molho, mussarela, calabresa, frango, catupiry.", "especial"),
+      pizza("Tropical", "especiais", "Molho, mussarela, catupiry, bacon, calabresa, cebola, alho frito.", "especial"),
+      pizza("À Moda do Pizzaiolo", "especiais", "Molho, mussarela, catupiry, presunto, lombinho, frango, milho, cebola.", "especial"),
+      pizza("Desejo 1", "especiais", "Molho, mussarela, bacon, presunto, frango, cebola.", "especial"),
+      pizza("Desejo 2", "especiais", "Molho, mussarela, bacon, calabresa, catupiry.", "especial"),
+      pizza("Cinco Desejos", "especiais", "Molho, mussarela e 5 ingredientes à sua escolha. Informe os ingredientes no campo Observações do pedido.", "especial", { semMeia: true }),
+      pizza("Frango Catupiry", "especiais", "Molho, mussarela, frango, catupiry.", "especial"),
+      pizza("Calabresa Catupiry", "especiais", "Molho, mussarela, calabresa, catupiry.", "especial"),
+      pizza("Lombinho Catupiry", "especiais", "Molho, mussarela, lombinho, catupiry.", "especial"),
+      pizza("Quatro Queijos", "especiais", "Molho, mussarela, parmesão, provolone, catupiry.", "especial"),
+      pizza("Quatro Queijos com Cheddar", "especiais", "Molho, mussarela, parmesão, provolone, cheddar.", "especial"),
+      pizza("Queijos com Bacon", "especiais", "Molho, mussarela, bacon, parmesão, provolone, catupiry.", "especial"),
+      pizza("Quatro Carnes", "especiais", "Molho, mussarela, presunto, lombinho, calabresa ralada, tomate, bacon.", "especial"),
+      pizza("Catupireza", "especiais", "Molho, mussarela, calabresa, catupiry, cebola.", "especial"),
+      pizza("Caliente", "especiais", "Molho, mussarela, lombinho, calabresa, bacon, pimentão, pimenta.", "especial"),
+      pizza("Caipira", "especiais", "Molho, mussarela, catupiry, frango, bacon, champignon.", "especial"),
+      pizza("Da Casa", "especiais", "Molho, mussarela, presunto, ovo, catupiry, calabresa.", "especial"),
+      pizza("Romanesca", "especiais", "Molho, mussarela, atum, bacon, champignon, cebola, ovo ralado, catupiry.", "especial"),
+      pizza("Americana", "especiais", "Molho, mussarela, bacon, ovo, milho, cebola.", "especial"),
+      pizza("Peito de Peru", "especiais", "Molho, mussarela, peito de peru, catupiry.", "especial"),
+      pizza("Lisboa", "especiais", "Molho, mussarela, frango, palmito, cebola.", "especial"),
+      pizza("Madri", "especiais", "Molho, mussarela, presunto, calabresa, palmito, ovo, cebola.", "especial"),
+      pizza("Tarantela", "especiais", "Molho, mussarela, presunto, bacon, pimentão, milho, palmito, ovo, tomate.", "especial"),
+      pizza("Toscana", "especiais", "Molho, mussarela, calabresa, ovo, cebola, milho.", "especial"),
+      pizza("Crocante", "especiais", "Molho, mussarela, presunto, bacon, milho, batata palha.", "especial"),
+      pizza("Estrogonofe de Frango", "especiais", "Molho, estrogonofe, catupiry, mussarela.", "especial"),
+      pizza("Portuguesa à Moda", "especiais", "Molho, mussarela, presunto, calabresa, ovo, cebola.", "especial"),
+
+      // ===== PIZZAS DOCES =====
+      pizza("Sensação Duo", "doces", "Dois chocolates com morangos.", "sensacao"),
+      pizza("Romeu e Julieta", "doces", "Pizza doce sabor Romeu e Julieta.", "doce"),
+      pizza("Brigadeiro", "doces", "Pizza doce sabor brigadeiro.", "doce"),
+      pizza("Beijinho", "doces", "Pizza doce sabor beijinho.", "doce"),
+      pizza("M&Ms", "doces", "Pizza doce com M&Ms.", "doce"),
+
+      // ===== CALZONES =====
+      item("Calzone 1", "calzones", "Mussarela, carne seca, bacon, banana da terra, cebola, cream cheese e catupiry ou cheddar.", [["Com catupiry", 45], ["Com cheddar", 45]]),
+      item("Calzone 2", "calzones", "Mussarela, presunto, frango, bacon, cebola.", [["Unidade", 30]]),
+      item("Calzone 3", "calzones", "Mussarela, calabresa, cebola, catupiry.", [["Unidade", 30]]),
+      item("Calzone 4", "calzones", "Mussarela, frango, catupiry.", [["Unidade", 30]]),
+      item("Calzone 5", "calzones", "Mussarela, bacon, calabresa, catupiry.", [["Unidade", 30]]),
+      item("Calzone 6", "calzones", "Mussarela, presunto, ovo, catupiry, calabresa.", [["Unidade", 30]]),
+      item("Calzone 7", "calzones", "Mussarela, bacon, frango, milho, tomate, ovo, presunto e catupiry ou cheddar.", [["Com catupiry", 35], ["Com cheddar", 35]]),
+      item("Calzone 8", "calzones", "Mussarela, calabresa, tomate, cebola, ovo.", [["Unidade", 30]]),
+      item("Calzone 9", "calzones", "Mussarela, tomate, palmito, cebola, pimentão.", [["Unidade", 30]]),
+      item("Calzone 10", "calzones", "Mussarela, lombinho canadense, catupiry, frango, milho, presunto.", [["Unidade", 35]]),
+
+      // ===== ADICIONAIS =====
+      item("Borda Recheada", "adicionais", "Escolha o recheio da borda.", [
+        ["Catupiry com frango", 15], ["Catupiry com presunto", 15], ["Cheddar e frango", 15],
+        ["Cheddar e presunto", 15], ["Cream cheese", 15], ["Catupiry", 10], ["Cheddar", 10]
+      ]),
+      item("Ingrediente Adicional", "adicionais", "Extra para turbinar a sua pizza.", [
+        ["Azeitona", 5], ["Cream cheese", 12], ["Catupiry", 8], ["Cheddar", 8]
+      ]),
+
+      // ===== BEBIDAS =====
+      item("Coca-Cola Original 1L", "bebidas", "Refrigerante Coca-Cola original — 1 litro.", [["1 litro", 10]]),
+      item("Guaraná Antarctica 1L", "bebidas", "Refrigerante Guaraná Antarctica — 1 litro.", [["1 litro", 10]]),
+      item("Guaraná Antarctica Lata", "bebidas", "Refrigerante Guaraná Antarctica — lata 350 ml.", [["Lata 350 ml", 7]]),
+      item("Coca-Cola Zero Lata", "bebidas", "Refrigerante Coca-Cola Zero Açúcar — lata 350 ml.", [["Lata 350 ml", 7]]),
+      item("Fanta Lata", "bebidas", "Refrigerante Fanta — lata 350 ml.", [["Lata 350 ml", 7]])
+    ];
+
+    // Sabores disponíveis para a Pizza Dois Sabores (salgadas, exceto as que exigem escolha de ingredientes).
+    const saboresMeiaMeia = () =>
+      produtos.filter(p => !p.tipo && ["tradicionais", "especiais", "doces"].includes(p.categoria) && !p.semMeia);
+
+    // Pizzas doces aparecem com "(Doce)" depois do nome, para o cliente identificar.
+    const nomeSabor = p => p.categoria === "doces" ? `${p.nome} (Doce)` : p.nome;
+    const rotuloSabor = nome => {
+      const p = produtos.find(prod => prod.nome === nome && !prod.tipo);
+      return p ? nomeSabor(p) : nome;
+    };
+
+    let carrinho = [];
+    let categoriaAtual = "todas";
+
+    const dinheiro = valor => valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    const el = id => document.getElementById(id);
+    const totalCarrinho = () => carrinho.reduce((soma, item) => soma + item.preco * item.quantidade, 0);
+    const quantidadeItens = () => carrinho.reduce((soma, item) => soma + item.quantidade, 0);
+
+    function escaparHTML(texto) {
+      return String(texto).replace(/[&<>"']/g, caractere => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[caractere]));
+    }
+
+    function renderProdutos() {
+      const lista = el("listaProdutos");
+      const filtrados = produtos.filter(p => categoriaAtual === "todas" || p.categoria === categoriaAtual);
+      const emojis = { bebidas: "🥤", doces: "🍫", calzones: "🥟", adicionais: "➕" };
+
+      lista.innerHTML = filtrados.map(produto => {
+        if (produto.tipo === "meia-meia") {
+          const sabores = saboresMeiaMeia();
+          const tamanhoOptions = NOMES_TAMANHO.map((nome, i) =>
+            `<option value="${i}">${escaparHTML(nome)}</option>`).join("");
+          const grupo = (rotulo, categoria) =>
+            `<optgroup label="${rotulo}">` + sabores.filter(s => s.categoria === categoria).map(s =>
+              `<option value="${escaparHTML(s.nome)}">${escaparHTML(nomeSabor(s))} — ${dinheiro(s.tamanhos[0].preco)}</option>`).join("") + `</optgroup>`;
+          const saborOptions = grupo("Tradicionais", "tradicionais") + grupo("Especiais", "especiais") + grupo("Doces", "doces");
+          return `
+            <article id="pizza-dois-sabores" class="pizza-card card-destaque rounded-2xl p-5 scroll-mt-20">
+              <span class="badge-destaque inline-block text-xs font-bold uppercase tracking-wide rounded-full px-3 py-1 mb-3">Destaque da casa</span>
+              <div class="text-4xl mb-2" aria-hidden="true">🍕</div>
+              <h3 class="text-xl font-bold">Pizza Dois Sabores</h3>
+              <p class="text-gray-600 text-sm my-2">${escaparHTML(produto.descricao)}</p>
+              <label class="block text-sm font-semibold mt-3">Tamanho
+                <select class="select-tamanho w-full border rounded-lg p-2 mt-1" data-produto="${produto.id}">${tamanhoOptions}</select>
+              </label>
+              <label class="block text-sm font-semibold mt-3">Primeiro sabor
+                <select class="select-sabor1 w-full border rounded-lg p-2 mt-1" data-produto="${produto.id}">${saborOptions}</select>
+              </label>
+              <p id="desc-sabor1" class="text-xs text-gray-500 mt-1"></p>
+              <label class="block text-sm font-semibold mt-3">Segundo sabor
+                <select class="select-sabor2 w-full border rounded-lg p-2 mt-1" data-produto="${produto.id}">${saborOptions}</select>
+              </label>
+              <p id="desc-sabor2" class="text-xs text-gray-500 mt-1"></p>
+              <p class="font-bold text-red-600 mt-3 text-lg" id="preco-${produto.id}"></p>
+              <p class="text-xs text-gray-500" id="nota-preco-${produto.id}"></p>
+              <button class="btn-adicionar-meia w-full bg-red-600 hover:bg-red-700 text-white rounded-xl py-2 mt-3 font-bold" data-produto="${produto.id}">Adicionar ao carrinho</button>
+            </article>`;
+        }
+
+        if (produto.tipo === "tres-sabores") {
+          const sabores = saboresMeiaMeia();
+          const opcoes = [["tradicionais", "Tradicionais"], ["especiais", "Especiais"], ["doces", "Doces"]].map(([cat, rotulo]) =>
+            `<optgroup label="${rotulo}">` + sabores.filter(s => s.categoria === cat).map(s =>
+              `<option value="${escaparHTML(s.nome)}">${escaparHTML(nomeSabor(s))} — ${dinheiro(s.tamanhos[3].preco)}</option>`).join("") + `</optgroup>`
+          ).join("");
+          const campos = [1, 2, 3].map(n => `
+              <label class="block text-sm font-semibold mt-3">${n}º sabor
+                <select class="select-tres w-full border rounded-lg p-2 mt-1" data-produto="${produto.id}" data-pos="${n - 1}">${opcoes}</select>
+              </label>
+              <p id="desc-tres-${n}" class="text-xs text-gray-500 mt-1"></p>`).join("");
+          return `
+            <article id="pizza-tres-sabores" class="pizza-card card-destaque rounded-2xl p-5 scroll-mt-20">
+              <span class="badge-destaque inline-block text-xs font-bold uppercase tracking-wide rounded-full px-3 py-1 mb-3">Tamanho Família</span>
+              <div class="text-4xl mb-2" aria-hidden="true">🍕</div>
+              <h3 class="text-xl font-bold">Pizza Três Sabores</h3>
+              <p class="text-gray-600 text-sm my-2">${escaparHTML(produto.descricao)}</p>
+              ${campos}
+              <p class="font-bold text-red-600 mt-3 text-lg" id="preco-tres-sabores"></p>
+              <p class="text-xs text-gray-500" id="nota-preco-tres-sabores"></p>
+              <button class="btn-adicionar-tres w-full bg-red-600 hover:bg-red-700 text-white rounded-xl py-2 mt-3 font-bold" data-produto="${produto.id}">Adicionar ao carrinho</button>
+            </article>`;
+        }
+
+        const tamanhoOptions = produto.tamanhos.map((t, i) =>
+          `<option value="${i}">${escaparHTML(t.nome)} — ${dinheiro(t.preco)}</option>`).join("");
+        const precos = produto.tamanhos.map(t => t.preco);
+        const rotuloPreco = (new Set(precos).size > 1 ? "A partir de " : "") + dinheiro(Math.min(...precos));
+        return `
+          <article class="pizza-card bg-white rounded-2xl border p-5">
+            <div class="text-4xl mb-2" aria-hidden="true">${emojis[produto.categoria] || "🍕"}</div>
+            <h3 class="text-xl font-bold">${escaparHTML(produto.nome)}</h3>
+            <p class="text-gray-600 text-sm my-2">${escaparHTML(produto.descricao)}</p>
+            <p class="font-bold text-red-600">${rotuloPreco}</p>
+            <label class="block text-sm font-semibold mt-3">Opção
+              <select class="select-tamanho w-full border rounded-lg p-2 mt-1" data-produto="${produto.id}">${tamanhoOptions}</select>
+            </label>
+            <button class="btn-adicionar w-full bg-red-600 hover:bg-red-700 text-white rounded-xl py-2 mt-4 font-bold" data-produto="${produto.id}">Adicionar ao carrinho</button>
+          </article>`;
+      }).join("");
+
+      // Começa com dois sabores diferentes selecionados na pizza dois sabores.
+      const segundoSabor = document.querySelector('.select-sabor2[data-produto="meia-meia"]');
+      if (segundoSabor && segundoSabor.options.length > 1) segundoSabor.selectedIndex = 1;
+
+      // Começa com três sabores diferentes selecionados na pizza três sabores.
+      document.querySelectorAll(".select-tres").forEach((select, i) => {
+        if (select.options.length > i) select.selectedIndex = i;
+      });
+      atualizarPrecoTres();
+
+      atualizarPrecoMeiaMeia();
+    }
+
+    // Regra de preço da pizza dois sabores:
+    // se algum dos sabores for Especial ou Doce, vale o preço dele (mesmo que a outra metade seja Tradicional).
+    // Se os dois forem Especiais com preços diferentes, vale o mais caro. Dois Tradicionais: preço de tradicional.
+    function calcularPorSabores(indiceTamanho, nomes) {
+      const sabores = nomes
+        .map(nome => produtos.find(prod => prod.nome === nome && !prod.tipo))
+        .filter(Boolean);
+      // Especiais e doces entram na faixa de preço "especial"; só tradicionais usam o preço de tradicional.
+      const especiais = sabores.filter(s => s.categoria !== "tradicionais");
+      const base = especiais.length ? especiais : sabores;
+      const referencia = base.reduce((maior, s) =>
+        s.tamanhos[indiceTamanho].preco > maior.tamanhos[indiceTamanho].preco ? s : maior, base[0]);
+      return { preco: referencia.tamanhos[indiceTamanho].preco, referencia, temEspecial: especiais.length > 0 };
+    }
+    const calcularMeiaMeia = (i, n1, n2) => calcularPorSabores(i, [n1, n2]);
+    const precoMeiaMeia = (i, n1, n2) => calcularMeiaMeia(i, n1, n2).preco;
+
+    function atualizarPrecoMeiaMeia() {
+      const tamanhoSelect = document.querySelector('.select-tamanho[data-produto="meia-meia"]');
+      const sabor1 = document.querySelector('.select-sabor1[data-produto="meia-meia"]');
+      const sabor2 = document.querySelector('.select-sabor2[data-produto="meia-meia"]');
+      const display = el("preco-meia-meia");
+      if (!tamanhoSelect || !sabor1 || !sabor2 || !display) return;
+      const indice = Number(tamanhoSelect.value);
+
+      // Mostra o preço de cada sabor (no tamanho escolhido) ao lado do nome, e os ingredientes logo abaixo.
+      [[sabor1, "desc-sabor1"], [sabor2, "desc-sabor2"]].forEach(([select, idDescricao]) => {
+        Array.from(select.options).forEach(opcao => {
+          const p = produtos.find(prod => prod.nome === opcao.value && !prod.tipo);
+          if (p) opcao.textContent = `${nomeSabor(p)} — ${dinheiro(p.tamanhos[indice].preco)}`;
+        });
+        const escolhido = produtos.find(prod => prod.nome === select.value && !prod.tipo);
+        el(idDescricao).textContent = escolhido ? escolhido.descricao : "";
+      });
+
+      const resultado = calcularMeiaMeia(indice, sabor1.value, sabor2.value);
+      display.textContent = dinheiro(resultado.preco);
+      el("nota-preco-meia-meia").textContent = resultado.temEspecial
+        ? `Vale o preço do sabor ${resultado.referencia.categoria === "doces" ? "doce" : "especial"} - ${resultado.referencia.nome}.`
+        : "Preço de pizza tradicional.";
+    }
+
+    // Pizza três sabores: sempre tamanho Família (índice 3 da tabela de preços).
+    const INDICE_FAMILIA = 3;
+
+    function atualizarPrecoTres() {
+      const selects = Array.from(document.querySelectorAll(".select-tres"));
+      const display = el("preco-tres-sabores");
+      if (selects.length !== 3 || !display) return;
+
+      selects.forEach((select, i) => {
+        const escolhido = produtos.find(prod => prod.nome === select.value && !prod.tipo);
+        el(`desc-tres-${i + 1}`).textContent = escolhido ? escolhido.descricao : "";
+      });
+
+      const resultado = calcularPorSabores(INDICE_FAMILIA, selects.map(s => s.value));
+      display.textContent = dinheiro(resultado.preco);
+      el("nota-preco-tres-sabores").textContent = resultado.temEspecial
+        ? `Vale o preço do sabor ${resultado.referencia.categoria === "doces" ? "doce" : "especial"} mais caro - ${resultado.referencia.nome}.`
+        : "Preço de pizza tradicional.";
+    }
+
+    function adicionarTresSabores(id) {
+      const nomes = Array.from(document.querySelectorAll(`.select-tres[data-produto="${id}"]`)).map(s => s.value);
+      if (nomes.length !== 3) return;
+      if (new Set(nomes).size < 3) {
+        alert("Escolha três sabores diferentes para a pizza três sabores.");
+        return;
+      }
+      adicionarAoCarrinho({
+        id: `${id}-Familia-${nomes.slice().sort().join("-")}`,
+        nome: `Pizza Três Sabores (Família) — ${nomes.map(rotuloSabor).join(" / ")}`,
+        preco: calcularPorSabores(INDICE_FAMILIA, nomes).preco
+      });
+    }
+
+    function adicionarProduto(id) {
+      const produto = produtos.find(p => p.id === id);
+      if (!produto) return;
+      const select = document.querySelector(`.select-tamanho[data-produto="${id}"]`);
+      const tamanho = produto.tamanhos[Number(select.value)];
+      adicionarAoCarrinho({
+        id: `${id}-${tamanho.nome}`,
+        nome: tamanho.nome === "Unidade" ? produto.nome : `${produto.nome} (${tamanho.nome})`,
+        preco: tamanho.preco
+      });
+    }
+
+    function adicionarMeiaMeia(id) {
+      const tamanhoSelect = document.querySelector(`.select-tamanho[data-produto="${id}"]`);
+      const sabor1 = document.querySelector(`.select-sabor1[data-produto="${id}"]`);
+      const sabor2 = document.querySelector(`.select-sabor2[data-produto="${id}"]`);
+      if (!tamanhoSelect || !sabor1 || !sabor2) return;
+
+      if (sabor1.value === sabor2.value) {
+        alert("Escolha dois sabores diferentes para a pizza dois sabores.");
+        return;
+      }
+      const indice = Number(tamanhoSelect.value);
+      const tamanho = NOMES_TAMANHO[indice];
+      const sabores = [sabor1.value, sabor2.value];
+      adicionarAoCarrinho({
+        id: `${id}-${tamanho}-${sabores.slice().sort().join("-")}`,
+        nome: `Pizza Dois Sabores (${tamanho}) — ${sabores.map(rotuloSabor).join(" / ")}`,
+        preco: precoMeiaMeia(indice, sabores[0], sabores[1])
+      });
+    }
+
+    function adicionarAoCarrinho(item) {
+      const existente = carrinho.find(p => p.id === item.id);
+      if (existente) existente.quantidade++;
+      else carrinho.push({ ...item, quantidade: 1 });
+      renderCarrinho();
+    }
+
+    function alterarQuantidade(id, delta) {
+      const item = carrinho.find(p => p.id === id);
+      if (!item) return;
+      item.quantidade += delta;
+      if (item.quantidade <= 0) carrinho = carrinho.filter(p => p.id !== id);
+      renderCarrinho();
+    }
+
+    function renderCarrinho() {
+      const lista = el("listaCarrinho");
+      if (carrinho.length === 0) {
+        lista.innerHTML = '<p class="text-gray-500 text-center py-4">Seu carrinho está vazio.</p>';
+      } else {
+        lista.innerHTML = carrinho.map(item => `
+          <div class="flex items-center justify-between gap-3 border rounded-xl p-3">
+            <div class="min-w-0">
+              <p class="font-semibold break-words">${escaparHTML(item.nome)}</p>
+              <p class="text-sm text-gray-600">${dinheiro(item.preco)} cada</p>
+              <p class="font-bold">${dinheiro(item.preco * item.quantidade)}</p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button class="btn-quantidade border rounded-lg w-8 h-8 font-bold" data-id="${escaparHTML(item.id)}" data-delta="-1" aria-label="Diminuir quantidade">−</button>
+              <span class="font-bold">${item.quantidade}</span>
+              <button class="btn-quantidade border rounded-lg w-8 h-8 font-bold" data-id="${escaparHTML(item.id)}" data-delta="1" aria-label="Aumentar quantidade">+</button>
+            </div>
+          </div>`).join("");
+      }
+
+      const total = dinheiro(totalCarrinho());
+      el("totalCarrinho").textContent = total;
+      el("totalTopo").textContent = total;
+      el("totalFlutuante").textContent = total;
+      el("quantidadeCarrinho").textContent = quantidadeItens();
+      el("btnFinalizar").disabled = carrinho.length === 0;
+      if (el("totalBebidas")) el("totalBebidas").textContent = total;
+      renderBebidas();
+    }
+
+    function abrirModal(id) {
+      el(id).classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+    }
+    function fecharModal(id) {
+      el(id).classList.add("hidden");
+      if (["modalCarrinho", "modalCheckout", "modalBebidas"].every(m => el(m).classList.contains("hidden"))) {
+        document.body.style.overflow = "";
+      }
+    }
+
+    function dataHoraBahia() {
+      return new Intl.DateTimeFormat("pt-BR", {
+        timeZone: "America/Bahia",
+        dateStyle: "short",
+        timeStyle: "short"
+      }).format(new Date());
+    }
+
+    function montarMensagemPedido(dados) {
+      const linhas = [
+        "🍕 *NOVO PEDIDO — DESEJO PIZZA*",
+        "",
+        ...carrinho.map(item => `• ${item.quantidade}x ${item.nome} — ${dinheiro(item.preco * item.quantidade)}`),
+        "",
+        `*TOTAL: ${dinheiro(totalCarrinho())}*`,
+        "",
+        "*DADOS DO CLIENTE*",
+        `Nome: ${dados.nome}`,
+        `Telefone: ${dados.telefone || "Não informado"}`,
+        `Endereço: ${dados.endereco}`,
+        `Referência: ${dados.referencia || "Não informada"}`,
+        `Pagamento: ${dados.pagamento}`,
+        ...(dados.troco ? [`Troco para: ${dados.troco}`] : []),
+        `Observações: ${dados.observacoes || "Nenhuma"}`,
+        "",
+        `Pedido realizado em: ${dataHoraBahia()}`
+      ];
+      return linhas.join("\n");
+    }
+
+    // Vitrine/carrossel: personalize título, texto, imagem e link de cada slide.
+    // Para usar o Instagram, troque o campo link pela URL do perfil ou da publicação.
+    const slides = [
+      { titulo: "Seu próximo desejo começa aqui", texto: "Sabores para compartilhar bons momentos.", imagem: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1600&q=85", link: "https://www.instagram.com/desejo.pizza?exln=eDZpZDJ2Ym96aWV1&utm_source=qr" },
+      { titulo: "Uma combinação irresistível", texto: "Escolha seus sabores favoritos e aproveite.", imagem: "https://images.unsplash.com/photo-1579751626657-72bc17010498?auto=format&fit=crop&w=1600&q=85", link: "https://www.instagram.com/desejo.pizza?exln=eDZpZDJ2Ym96aWV1&utm_source=qr" },
+      { titulo: "Feita para dividir — ou não!", texto: "Aproveite cada pedaço da sua pizza favorita.", imagem: "https://images.unsplash.com/photo-1571407970349-bc81e7e96d47?auto=format&fit=crop&w=1600&q=85", link: "https://www.instagram.com/desejo.pizza?exln=eDZpZDJ2Ym96aWV1&utm_source=qr" }
+    ];
+    let slideAtual = 0;
+    let temporizadorSlides;
+
+    function mostrarSlide(indice) {
+      slideAtual = (indice + slides.length) % slides.length;
+      const slide = slides[slideAtual];
+      el("imagemSlide").src = slide.imagem;
+      el("imagemSlide").alt = slide.titulo;
+      el("tituloSlide").textContent = slide.titulo;
+      el("textoSlide").textContent = slide.texto;
+      el("linkSlide").href = slide.link;
+      el("indicadoresSlides").innerHTML = slides.map((_, i) =>
+        `<button type="button" data-slide="${i}" aria-label="Mostrar destaque ${i + 1}" class="w-2.5 h-2.5 rounded-full ${i === slideAtual ? "bg-white" : "bg-white/50"}"></button>`
+      ).join("");
+    }
+
+    function reiniciarRotacaoSlides() {
+      clearInterval(temporizadorSlides);
+      temporizadorSlides = setInterval(() => mostrarSlide(slideAtual + 1), 5500);
+    }
+
+    el("slideAnterior").addEventListener("click", () => { mostrarSlide(slideAtual - 1); reiniciarRotacaoSlides(); });
+    el("proximoSlide").addEventListener("click", () => { mostrarSlide(slideAtual + 1); reiniciarRotacaoSlides(); });
+    el("indicadoresSlides").addEventListener("click", event => {
+      const botao = event.target.closest("button[data-slide]");
+      if (!botao) return;
+      mostrarSlide(Number(botao.dataset.slide));
+      reiniciarRotacaoSlides();
+    });
+    mostrarSlide(0);
+    reiniciarRotacaoSlides();
+
+    // O atalho do cabeçalho também ativa a categoria correta antes de rolar.
+    function irParaCard(categoria, idCard) {
+      categoriaAtual = categoria;
+      document.querySelectorAll("#categorias button").forEach(btn => {
+        const ativo = btn.dataset.categoria === categoria;
+        btn.classList.toggle("tab-active", ativo);
+        btn.classList.toggle("bg-white", !ativo);
+        btn.classList.toggle("border", !ativo);
+      });
+      renderProdutos();
+      requestAnimationFrame(() => el(idCard)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
+    el("atalhoDoisSabores").addEventListener("click", event => {
+      event.preventDefault();
+      irParaCard("tradicionais", "pizza-dois-sabores");
+    });
+    el("atalhoTresSabores").addEventListener("click", event => {
+      event.preventDefault();
+      irParaCard("tres-sabores", "pizza-tres-sabores");
+    });
+
+    // Eventos de categoria
+    el("categorias").addEventListener("click", event => {
+      const botao = event.target.closest("button[data-categoria]");
+      if (!botao) return;
+      categoriaAtual = botao.dataset.categoria;
+      document.querySelectorAll("#categorias button").forEach(btn => {
+        btn.classList.remove("tab-active");
+        btn.classList.add("bg-white", "border");
+      });
+      botao.classList.add("tab-active");
+      botao.classList.remove("bg-white", "border");
+      renderProdutos();
+      botao.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+      // Se o usuário já rolou a página, volta ao início da lista da nova categoria.
+      const topoLista = el("listaProdutos").getBoundingClientRect().top;
+      if (topoLista < 70) window.scrollTo({ top: window.scrollY + topoLista - 70, behavior: "smooth" });
+    });
+
+    // Eventos de produtos (delegação para funcionar após renderização)
+    el("listaProdutos").addEventListener("change", event => {
+      if (event.target.matches(".select-tres")) atualizarPrecoTres();
+      if (event.target.matches(".select-tamanho[data-produto='meia-meia'], .select-sabor1, .select-sabor2")) {
+        atualizarPrecoMeiaMeia();
+      }
+    });
+    el("listaProdutos").addEventListener("click", event => {
+      const meia = event.target.closest(".btn-adicionar-meia");
+      const normal = event.target.closest(".btn-adicionar");
+      if (meia) adicionarMeiaMeia(meia.dataset.produto);
+      const tres = event.target.closest(".btn-adicionar-tres");
+      if (tres) adicionarTresSabores(tres.dataset.produto);
+      if (normal) adicionarProduto(normal.dataset.produto);
+    });
+
+    // Carrinho e checkout
+    el("btnAbrirCarrinho").addEventListener("click", () => abrirModal("modalCarrinho"));
+    el("btnCarrinhoFlutuante").addEventListener("click", () => abrirModal("modalCarrinho"));
+    el("btnFecharCarrinho").addEventListener("click", () => fecharModal("modalCarrinho"));
+    el("btnFecharCheckout").addEventListener("click", () => fecharModal("modalCheckout"));
+    el("btnFinalizar").addEventListener("click", () => {
+      if (carrinho.length === 0) {
+        alert("Adicione pelo menos um produto ao carrinho.");
+        return;
+      }
+      fecharModal("modalCarrinho");
+      abrirModal("modalCheckout");
+    });
+
+    el("listaCarrinho").addEventListener("click", event => {
+      const botao = event.target.closest(".btn-quantidade");
+      if (!botao) return;
+      alterarQuantidade(botao.dataset.id, Number(botao.dataset.delta));
+    });
+
+    el("pagamentoCliente").addEventListener("change", () => {
+      const dinheiroSelecionado = el("pagamentoCliente").value === "Dinheiro";
+      el("campoTroco").classList.toggle("hidden", !dinheiroSelecionado);
+      if (!dinheiroSelecionado) el("trocoCliente").value = "";
+    });
+
+    el("formCheckout").addEventListener("submit", event => {
+      event.preventDefault();
+      if (carrinho.length === 0) {
+        alert("Seu carrinho está vazio.");
+        fecharModal("modalCheckout");
+        return;
+      }
+
+      const dados = {
+        nome: el("nomeCliente").value.trim(),
+        telefone: el("telefoneCliente").value.trim(),
+        endereco: el("enderecoCliente").value.trim(),
+        referencia: el("referenciaCliente").value.trim(),
+        pagamento: el("pagamentoCliente").value,
+        troco: el("pagamentoCliente").value === "Dinheiro" ? el("trocoCliente").value.trim() : "",
+        observacoes: el("observacoesCliente").value.trim()
+      };
+
+      if (!dados.nome || !dados.endereco || !dados.pagamento) {
+        alert("Preencha nome, endereço e forma de pagamento.");
+        return;
+      }
+
+      const mensagem = montarMensagemPedido(dados);
+      const url = `https://wa.me/${WHATSAPP_PIZZARIA}?text=${encodeURIComponent(mensagem)}`;
+      // Navega na mesma aba para reduzir o risco de bloqueio de pop-up.
+      window.location.href = url;
+      // O carrinho não é apagado automaticamente; o cliente pode voltar e revisar.
+    });
+
+    // Fechar modal clicando no fundo e com a tecla Escape
+    ["modalCarrinho", "modalCheckout", "modalBebidas"].forEach(id => {
+      el(id).addEventListener("click", event => {
+        if (event.target === el(id)) fecharModal(id);
+      });
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        fecharModal("modalCheckout");
+        fecharModal("modalCarrinho");
+        fecharModal("modalBebidas");
+      }
+    });
+
+    // ===== Botão Bebidas: copo que enche de líquido verde =====
+    function copoSVG(n) {
+      const vidro = "M5 10 H35 L31 50 Q31 52 29 52 H11 Q9 52 9 50 Z";
+      const onda = "M-20 14 q5 -3 10 0 " + "t10 0 ".repeat(7) + "V70 H-20 Z";
+      return `<svg viewBox="0 0 40 54" class="w-full h-full overflow-visible" aria-hidden="true">
+        <defs><clipPath id="clip-copo-${n}"><path d="${vidro}"/></clipPath></defs>
+        <path d="${vidro}" fill="rgba(255,255,255,.18)"/>
+        <g clip-path="url(#clip-copo-${n})">
+          <g class="copo-liquido">
+            <path class="onda onda-fundo" d="${onda}" fill="#86efac"/>
+            <path class="onda" d="${onda}" fill="#22c55e"/>
+            <circle class="bolha" cx="16" cy="46" r="1.4" fill="#fff"/>
+            <circle class="bolha" cx="23" cy="42" r="1.1" fill="#fff"/>
+            <circle class="bolha" cx="27" cy="47" r="1.3" fill="#fff"/>
+          </g>
+        </g>
+        <path d="${vidro}" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/>
+        <path d="M24 30 L28 4 H34" fill="none" stroke="#facc15" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    }
+    document.querySelectorAll("[data-copo]").forEach((box, i) => { box.innerHTML = copoSVG(i); });
+
+    // Lista de bebidas dentro da janela: adicionar, aumentar e diminuir direto no carrinho.
+    function renderBebidas() {
+      const lista = el("listaBebidas");
+      if (!lista) return;
+      lista.innerHTML = produtos.filter(p => p.categoria === "bebidas").map(p =>
+        p.tamanhos.map((t, i) => {
+          const idCarrinho = `${p.id}-${t.nome}`;
+          const noCarrinho = carrinho.find(c => c.id === idCarrinho);
+          const controle = noCarrinho
+            ? `<div class="flex items-center gap-2 shrink-0">
+                 <button class="border rounded-lg w-9 h-9 font-bold" data-beb="menos" data-cid="${escaparHTML(idCarrinho)}" aria-label="Diminuir quantidade">−</button>
+                 <span class="font-bold w-5 text-center">${noCarrinho.quantidade}</span>
+                 <button class="border rounded-lg w-9 h-9 font-bold bg-red-600 text-white" data-beb="mais" data-cid="${escaparHTML(idCarrinho)}" aria-label="Aumentar quantidade">+</button>
+               </div>`
+            : `<button class="shrink-0 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl px-4 py-2" data-beb="add" data-produto="${p.id}" data-idx="${i}">Adicionar</button>`;
+          return `<div class="flex items-center justify-between gap-3 border rounded-xl p-3">
+                    <div class="min-w-0">
+                      <p class="font-semibold break-words">${escaparHTML(p.nome)}</p>
+                      <p class="font-bold text-red-600">${dinheiro(t.preco)}</p>
+                    </div>
+                    ${controle}
+                  </div>`;
+        }).join("")
+      ).join("");
+    }
+
+    el("listaBebidas").addEventListener("click", event => {
+      const botao = event.target.closest("button[data-beb]");
+      if (!botao) return;
+      if (botao.dataset.beb === "add") {
+        const produto = produtos.find(p => p.id === botao.dataset.produto);
+        const tamanho = produto && produto.tamanhos[Number(botao.dataset.idx)];
+        if (!tamanho) return;
+        adicionarAoCarrinho({
+          id: `${produto.id}-${tamanho.nome}`,
+          nome: tamanho.nome === "Unidade" ? produto.nome : `${produto.nome} (${tamanho.nome})`,
+          preco: tamanho.preco
+        });
+      } else {
+        alterarQuantidade(botao.dataset.cid, botao.dataset.beb === "mais" ? 1 : -1);
+      }
+    });
+    document.querySelectorAll("[data-abrir-bebidas]").forEach(b =>
+      b.addEventListener("click", () => abrirModal("modalBebidas")));
+    el("btnFecharBebidas").addEventListener("click", () => fecharModal("modalBebidas"));
+    el("btnBebidasContinuar").addEventListener("click", () => fecharModal("modalBebidas"));
+    el("btnBebidasCarrinho").addEventListener("click", () => {
+      fecharModal("modalBebidas");
+      abrirModal("modalCarrinho");
+    });
+
+    // Links de WhatsApp (usam o número definido no topo do script) e ano do rodapé.
+    const MENSAGEM_WHATS = encodeURIComponent("Olá! Vim pelo site da Desejo Pizza.");
+    document.querySelectorAll("[data-whats]").forEach(a => {
+      a.href = `https://wa.me/${WHATSAPP_PIZZARIA}?text=${MENSAGEM_WHATS}`;
+    });
+    el("anoAtual").textContent = new Date().getFullYear();
+
+    renderProdutos();
+    renderCarrinho();
+
+    // ===== CAMPANHA BLACK FRIDAY — INÍCIO (script do banner e do botão de tema) =====
+    // Isolado em try/catch: qualquer problema aqui nunca impede o cardápio de funcionar.
+    function iniciarCampanhaBlackFriday() {
+      const raiz = document.documentElement;
+      const banner = el("bannerBlackFriday");
+      const botao = el("btnTema");
+
+      // Banner: imagens (mobile/desktop via <picture>) e janela de exibição.
+      if (banner && bannerBlackFridayVisivel()) {
+        const img = el("bfImg");
+        const fonteDesktop = el("bfSourceDesktop");
+        const areaImagem = el("bfBannerImagem");
+        const mobile = (URL_BANNER_BLACK_FRIDAY_MOBILE || "").trim();
+        const desktop = (URL_BANNER_BLACK_FRIDAY_DESKTOP || "").trim();
+        img.addEventListener("error", () => { areaImagem.hidden = true; });   // sem imagem, o texto continua visível
+        if (mobile || desktop) {
+          if (desktop) fonteDesktop.srcset = desktop;
+          img.src = mobile || desktop;
+        } else {
+          areaImagem.hidden = true;
+        }
+        banner.dataset.promocao = estadoDaPromocao();   // "antes", "vigente" ou "encerrada"
+        banner.hidden = false;
+      }
+
+      // Botão de tema (sem localStorage: cada carregamento começa no tema inicial).
+      if (!botao || !temaBlackFridayDisponivel()) return;
+      const meta = el("metaThemeColor");
+      function aplicarTema(tema) {
+        const blackFriday = tema === "blackfriday";
+        raiz.setAttribute("data-theme", tema);
+        botao.querySelector("[data-tema-texto]").textContent = blackFriday ? "Voltar ao tema original" : "Ativar Black Friday";
+        botao.setAttribute("aria-label", blackFriday ? "Voltar ao tema original do site" : "Ativar o tema Black Friday");
+        botao.querySelector("[data-icone-sol]").hidden = !blackFriday;
+        botao.querySelector("[data-icone-estrela]").hidden = blackFriday;
+        if (meta) meta.setAttribute("content", blackFriday ? "#111111" : "#dc2626");
+      }
+      botao.addEventListener("click", () =>
+        aplicarTema(raiz.getAttribute("data-theme") === "blackfriday" ? "original" : "blackfriday"));
+      aplicarTema(raiz.getAttribute("data-theme") === "original" ? "original" : "blackfriday");
+      botao.hidden = false;
+    }
+    try { iniciarCampanhaBlackFriday(); } catch (erro) { console.error("Campanha Black Friday:", erro); }
+    // ===== CAMPANHA BLACK FRIDAY — FIM (script) =====
+  </script>
 </body>
 </html>
